@@ -8,7 +8,7 @@ var maxUpdates = 5000;
 function updateOrigin(type) {
     var grOrign = new GlideRecord(table);
     if (grOrigin.get(arrayAudit[i])) {
-        grOrigin.work_notes = count + ' ' + type + ' records have been deleted due to large amount, to allow the record to load';
+        grOrigin.work_notes = count + ' ' + type + ' records have been deleted due to an large amount. This was done to allow the record to load.';
         grOrigin.update();
     }
 }
@@ -80,13 +80,13 @@ if (keepLatest100 || deleteRecords) {
             var x = 0;
             while (grAudit.next()) {
                 if (x == 0)
-                    verbose('first: ' + grAudit.sys_created_on)
-                    x++;
+                    verbose('first: ' + grAudit.sys_created_on);
+                x++;
                 if (deleteRecords) {
                     grAudit.deleteRecord();
                 }
             }
-           verbose('x: ' + x + ' Last: ' + grAudit.sys_created_on);
+            verbose('x: ' + x + ' Last: ' + grAudit.sys_created_on);
             updateOrigin('Audit');
         }
         if (deleteRecords && !keepLatest100) {
@@ -113,8 +113,8 @@ if (keepLatest100 || deleteRecords) {
             var x = 0;
             while (grJournal.next()) {
                 if (x == 0)
-                    verbose('first: ' + grJournal.sys_created_on)
-                    x++;
+                    verbose('first: ' + grJournal.sys_created_on);
+                x++;
                 if (deleteRecords)
                     grJournal.deleteRecord();
             }
