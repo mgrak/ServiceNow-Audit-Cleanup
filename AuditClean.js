@@ -84,4 +84,32 @@ if (keepLatest100 || deleteRecords) {
             grSet.deleteMultiple();
         }
     }
+	for (var i = 0; i < arrayJournal.length; i++) {
+        var grJournal = new GlideRecord('sys_audit');
+        grJournal.addQuery('element_id', arrayJournal[i]);
+        grJournal.orderBy('sys_created_on');
+        if (keepLatest100)
+            grJournal.chooseWindow(100, 100000000);
+        grJournal.query();
+        if (keepLatest100) {
+            var x = 0;
+            while (grJournal.next()) {
+                if (x == 0)
+                    gs.info('first: ' + grJournal.sys_created_on)
+                    x++;
+                if (deleteRecords)
+                    grJournal.deleteRecord();
+            }
+            gs.info('x: ' + x + ' Last: ' + grJournal.sys_created_on);
+        }
+        if (deleteRecords && !keepLatest100)
+            grJournal.deleteMultiple();
+
+        if (deleteRecords) {
+            var grSet = new GlideRecord('sys_history_set');
+            grSet.addQuery('id', arrayJournal[i]);
+            grSet.query();
+            grSet.deleteMultiple();
+        }
+    }
 }
