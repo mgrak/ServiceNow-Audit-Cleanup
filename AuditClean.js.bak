@@ -61,7 +61,7 @@ function cleanRecord(table, field, sysid, origin) {
     }
 }
 
-function buildArray(table, field, type) {
+function buildArray(table, field) {
     var tempArray = [];
     var ga = new GlideAggregate(table);
     ga.addQuery(field, 'IN', array + '');
@@ -73,7 +73,7 @@ function buildArray(table, field, type) {
         ga.addAggregate('COUNT', 'tablename');
     ga.orderByAggregate('count', field);
     ga.query();
-    gs.info('_ ' + type + '🕵️ AUDIT COUNTS ________________________');
+    gs.info('_ 🕵️ AUDIT COUNTS ________________________');
     while (ga.next()) {
         var count = ga.getAggregate('COUNT', field);
         if (count > maxUpdates) {
@@ -96,13 +96,13 @@ while (gr.next()) {
 }
 
 //Audit History
-var arrayAudit = buildArray('sys_audit', 'documentkey', '🕵️ AUDIT');
+var arrayAudit = buildArray('sys_audit', 'documentkey');
 
 //Journal History (work notes/comments)
-var arrayJournal = buildArray('sys_journal_field', 'element_id', '💬 JOURNAL');
+var arrayJournal = buildArray('sys_journal_field', 'element_id');
 
 //What does the relation table do?
-var arrayRelation = buildArray('sys_audit_relation', 'documentkey', '💑 RELATION');
+var arrayRelation = buildArray('sys_audit_relation', 'documentkey');
 
 if (keepLatest100 || deleteRecords) {
     //Clean Audit Records
