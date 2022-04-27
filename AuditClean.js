@@ -1,10 +1,10 @@
 var deleteRecords = false;
 var keepLatest100 = false;
-var returnTable = true; //a lot faster w/o, only need with root table ie task
-var jiraOnly = true; //pm_project, pm_project_task, story, scrumm_task tables
+var returnChildTable = true; //a lot faster w/o, only need with root table ie task
+var jiraOnly = false; //pm_project, pm_project_task, story, scrumm_task tables
 var verbose = true;
-var table = 'pm_project_task';
-var maxUpdates = 100;
+var table = 'pm_project';
+var maxUpdates = 1000; //5000 is a safe number, problems start to occur at 12,000
 
 var grVal = new GlideRecord('sys_dictionary');
 grVal.addQuery('name', table)
@@ -61,23 +61,23 @@ function cleanRecord(table, field, sysid, origin) {
     }
 }
 
-function buildArray(table, field, type) {
+function buildArray(table, field, type, tablename) {
     var tempArray = [];
     var ga = new GlideAggregate(table);
     ga.addQuery(field, 'IN', array + '');
     ga.groupBy(field);
-    if (returnTable)
-        ga.groupBy('tablename');
+    if (returnChildTable)
+        ga.groupBy(tablename);
     ga.addAggregate('COUNT', field);
-    if (returnTable)
-        ga.addAggregate('COUNT', 'tablename');
+    if (returnChildTable)
+        ga.addAggregate('COUNT', tablename);
     ga.orderByAggregate('count', field);
     ga.query();
-    gs.info('_ ' + type + '🕵️ AUDIT COUNTS ________________________');
+    gs.info('_ ' + type + ' COUNTS ________________________');
     while (ga.next()) {
         var count = ga.getAggregate('COUNT', field);
         if (count > maxUpdates) {
-            log(ga.tablename + ' [' + ga[field] + ']: ' + count);
+            log(ga[tablename] + ' [' + ga[field] + ']: ' + count);
             tempArray.push(ga[field] + '');
         }
     }
@@ -96,13 +96,13 @@ while (gr.next()) {
 }
 
 //Audit History
-var arrayAudit = buildArray('sys_audit', 'documentkey', '🕵️ AUDIT');
+var arrayAudit = buildArray('sys_audit', 'documentkey', '🕵️ AUDIT', 'tablename');
 
 //Journal History (work notes/comments)
-var arrayJournal = buildArray('sys_journal_field', 'element_id', '💬 JOURNAL');
+var arrayJournal = buildArray('sys_journal_field', 'element_id', '💬 JOURNAL', 'name');
 
-//What does the relation table do?
-var arrayRelation = buildArray('sys_audit_relation', 'documentkey', '💑 RELATION');
+//Relationship History (record to record relationships)
+var arrayRelation = buildArray('sys_audit_relation', 'documentkey', '💑 RELATION', 'tablename');
 
 if (keepLatest100 || deleteRecords) {
     //Clean Audit Records
@@ -111,6 +111,11 @@ if (keepLatest100 || deleteRecords) {
     }
     //Clean Journal Records
     for (var i = 0; i < arrayJournal.length; i++) {
-        cleanRecord('sys_journal_field', 'element', arrayAudit[i], 'Journal');
+        cleanRecord('sys_journal_field', 'element', arrayJournal[i], 'Journal');
+    }
+  
+  //Clean Relationship Records
+    for (var i = 0; i < arrayRelation.length; i++) {
+        cleanRecord('sys_audit_relation_list', 'element', arrayRelation[i], 'Relation');
     }
 }
