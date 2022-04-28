@@ -1,30 +1,76 @@
-var deleteRecords = false;
-var keepLatest100 = false;
-var returnChildTable = true; //a lot faster w/o, only need with root table ie task
-var jiraOnly = false; //pm_project, pm_project_task, story, scrumm_task tables
-var verbose = true;
-var table = 'pm_project_task';
-var maxUpdates = 1000;
+var runLog = '', //fix script gs.info is awful, aggregate it and show it all at once
+tablesToClean = ['task'],
+verbose = true,
+deleteRecords = false, //show preview of affected records when verbose is true and this is false
+keepLatest100 = false,
+displayChildTable = false, //a lot faster w/o, only need with root table ie task
+jiraOnly = false, //pm_project, pm_project_task, story, scrumm_task tables
+maxUpdates = 1000; //5000 is a safe number, problems start to occur at 12,000
 
-var grVal = new GlideRecord('sys_dictionary');
-grVal.addQuery('name', table)
-grVal.addQuery('element', 'u_jira_id').addOrCondition('element', 'u_jira_deleted_id').addOrCondition('element', 'u_issue_id').addOrCondition('element', 'u_deleted_id');
-grVal.query();
-if (!grVal.hasNext()) {
-    throw 'Checking for Jira on a table without a u_jira_id or u_jira_deleted_id!';
-}
+for (var t = 0; t < tablesToClean.length; t++) {
+    var table = tablesToClean[t];
+    var link = 'https://' + gs.getProperty('instance_name') + '.service-now.com/' + table + '_list.do?sysparm_query=sys_idIN';
+    log('■■■■■■ 💠 TABLE: ' + table + ' ■■■■■■■■■');
+    if (jiraOnly) {
+        var grVal = new GlideRecord('sys_dictionary');
+        grVal.addQuery('name', table);
+        grVal.addQuery('element', 'u_jira_id').addOrCondition('element', 'u_jira_deleted_id').addOrCondition('element', 'u_issue_id').addOrCondition('element', 'u_deleted_id');
+        grVal.query();
+        if (!grVal.hasNext()) {
+            throw 'Checking for Jira on a table without a u_jira_id or u_jira_deleted_id!';
+        }
+    }
 
-function updateOrigin(type) {
-    var grOrigin = new GlideRecord(table);
-    if (grOrigin.get(arrayAudit[i])) {
-        grOrigin.work_notes = count + ' ' + type + ' records have been deleted due to an large amount. This was done to allow the record to load.';
-        grOrigin.update();
+    var gr = new GlideRecord(table);
+    gr.addQuery('sys_mod_count', '>=', maxUpdates);
+    if (jiraOnly)
+        gr.addEncodedQuery('u_issue_idISNOTEMPTY^ORu_deleted_idISNOTEMPTY&u_jira_idISNOTEMPTY^ORu_jira_deleted_idISNOTEMPTY');
+    gr.query();
+    var array = [];
+    while (gr.next()) {
+        array.push(gr.sys_id + '');
+    }
+
+    //Audit History
+    var arrayAudit = buildArray('sys_audit', 'documentkey', '🕵️ AUDIT', 'tablename');
+
+    //Journal History (work notes/comments)
+    var arrayJournal = buildArray('sys_journal_field', 'element_id', '💬 JOURNAL', 'name');
+
+    //Relationship History (record to record relationships)
+    var arrayRelation = buildArray('sys_audit_relation', 'documentkey', '💑 RELATION', 'tablename');
+
+    if (keepLatest100 || deleteRecords) {
+        //Clean Audit Records
+        for (var i = 0; i < arrayAudit.length; i++) {
+            cleanRecord('sys_audit', 'documentkey', arrayAudit[i], 'Audit');
+        }
+        //Clean Journal Records
+        for (var x = 0; x < arrayJournal.length; x++) {
+            cleanRecord('sys_journal_field', 'element_id', arrayJournal[x], 'Journal');
+        }
+
+        //Clean Relationship Records
+        for (var y = 0; y < arrayRelation.length; y++) {
+            cleanRecord('sys_audit_relation', 'documentkey', arrayRelation[y], 'Relation');
+        }
     }
 }
 
+if (verbose == true)
+    gs.info('\n██████████████ LOG OUTPUT ██████████████\n\n' + runLog);
+
 function log(msg) {
     if (verbose == true)
-        gs.info(msg);
+        runLog += msg + '\n';
+}
+
+function updateOrigin(type, sysid, count) {
+    var grOrigin = new GlideRecord(table);
+    if (grOrigin.get(sysid)) {
+        grOrigin.work_notes = count + ' ' + type + ' records have been deleted due to an large amount. This was done to allow the record to load.';
+        grOrigin.update();
+    }
 }
 
 function cleanRecord(table, field, sysid, origin) {
@@ -36,21 +82,21 @@ function cleanRecord(table, field, sysid, origin) {
     grClean.query();
     var count = grClean.getRowCount();
     if (keepLatest100) {
-        var x = 0;
+        var cleanIndex = 0;
         while (grClean.next()) {
-            if (x == 0)
+            if (cleanIndex == 0)
                 log('first: ' + grClean.sys_created_on);
-            x++;
+            cleanIndex++;
             if (deleteRecords) {
                 grClean.deleteRecord();
             }
         }
-        log('x: ' + x + ' Last: ' + grClean.sys_created_on);
-        updateOrigin(origin);
+        log('cleanIndex: ' + cleanIndex + ' Last: ' + grClean.sys_created_on);
+        updateOrigin(origin, sysid, count);
     }
     if (deleteRecords && !keepLatest100) {
         grClean.deleteMultiple();
-        updateOrigin(origin);
+        updateOrigin(origin, sysid, count);
     }
 
     if (deleteRecords) {
@@ -66,14 +112,14 @@ function buildArray(table, field, type, tablename) {
     var ga = new GlideAggregate(table);
     ga.addQuery(field, 'IN', array + '');
     ga.groupBy(field);
-    if (returnChildTable)
+    if (displayChildTable)
         ga.groupBy(tablename);
     ga.addAggregate('COUNT', field);
-    if (returnChildTable)
+    if (displayChildTable)
         ga.addAggregate('COUNT', tablename);
-    ga.orderByAggregate('count', field);
+    ga.orderByAggregate('COUNT', field);
     ga.query();
-    gs.info('_ ' + type + ' COUNTS ________________________');
+    log('_ ' + type + ' COUNTS ________________________');
     while (ga.next()) {
         var count = ga.getAggregate('COUNT', field);
         if (count > maxUpdates) {
@@ -81,36 +127,6 @@ function buildArray(table, field, type, tablename) {
             tempArray.push(ga[field] + '');
         }
     }
-    gs.info(tempArray + '');
+    log(link + tempArray);
     return tempArray;
-}
-
-var gr = new GlideRecord(table);
-gr.addQuery('sys_mod_count', '>=', maxUpdates);
-if (jiraOnly)
-    gr.addEncodedQuery('u_issue_idISNOTEMPTY^ORu_deleted_idISNOTEMPTY');
-gr.query();
-var array = [];
-while (gr.next()) {
-    array.push(gr.sys_id + '');
-}
-
-//Audit History
-var arrayAudit = buildArray('sys_audit', 'documentkey', '🕵️ AUDIT', 'tablename');
-
-//Journal History (work notes/comments)
-var arrayJournal = buildArray('sys_journal_field', 'element_id', '💬 JOURNAL', 'name');
-
-//What does the relation table do?
-var arrayRelation = buildArray('sys_audit_relation', 'documentkey', '💑 RELATION', 'tablename');
-
-if (keepLatest100 || deleteRecords) {
-    //Clean Audit Records
-    for (var i = 0; i < arrayAudit.length; i++) {
-        cleanRecord('sys_audit', 'documentkey', arrayAudit[i], 'Audit');
-    }
-    //Clean Journal Records
-    for (var i = 0; i < arrayJournal.length; i++) {
-        cleanRecord('sys_journal_field', 'element', arrayAudit[i], 'Journal');
-    }
 }
