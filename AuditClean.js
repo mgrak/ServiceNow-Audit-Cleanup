@@ -1,11 +1,14 @@
 var runLog = '', //fix script gs.info is awful, aggregate it and show it all at once
-	tablesToClean = ['task'],
-	verbose = true,
-	deleteRecords = false, //show preview of affected records when verbose is true and this is false
-	keepLatest100 = false,
-	displayChildTable = false, //a lot faster w/o, only need with root table ie task
-	jiraOnly = false, //pm_project, pm_project_task, story, scrumm_task tables
-	maxUpdates = 1000; //5000 is a safe number, problems start to occur at 12,000
+iSGlobal = false, //###NEED TO IMPLEMENT###dont clean a specific table just search all audit records for high counts
+displayValue = true, //Log info shows display value of the table records count
+tablesToClean = ['task', 'sys_user'],
+linkAuditRecord = true,
+verbose = true,
+deleteRecords = false, //show preview of affected records when verbose is true and this is false
+keepLatest100 = false,
+displayChildTable = false, //a lot faster w/o, only need with root table ie task
+jiraOnly = false, //pm_project, pm_project_task, story, scrumm_task tables
+updatesFloor = 1000; //5000 is a safe number, problems start to occur at 12,000
 
 for (var t = 0; t < tablesToClean.length; t++) {
     var table = tablesToClean[t];
@@ -22,7 +25,7 @@ for (var t = 0; t < tablesToClean.length; t++) {
     }
 
     var gr = new GlideRecord(table);
-    gr.addQuery('sys_mod_count', '>=', maxUpdates);
+    gr.addQuery('sys_mod_count', '>=', updatesFloor);
     if (jiraOnly)
         gr.addEncodedQuery('u_issue_idISNOTEMPTY^ORu_deleted_idISNOTEMPTY&u_jira_idISNOTEMPTY^ORu_jira_deleted_idISNOTEMPTY');
     gr.query();
@@ -32,13 +35,13 @@ for (var t = 0; t < tablesToClean.length; t++) {
     }
 
     //Audit History
-    var arrayAudit = buildArray('sys_audit', 'documentkey', '🕵️ AUDIT', 'tablename');
+    var arrayAudit = buildArray('sys_audit', 'documentkey', '🕵️ AUDIT', 'tablename', table);
 
     //Journal History (work notes/comments)
-    var arrayJournal = buildArray('sys_journal_field', 'element_id', '💬 JOURNAL', 'name');
+    var arrayJournal = buildArray('sys_journal_field', 'element_id', '💬 JOURNAL', 'name', table);
 
     //Relationship History (record to record relationships)
-    var arrayRelation = buildArray('sys_audit_relation', 'documentkey', '💑 RELATION', 'tablename');
+    var arrayRelation = buildArray('sys_audit_relation', 'documentkey', '💑 RELATION', 'tablename', table);
 
     if (keepLatest100 || deleteRecords) {
         //Clean Audit Records
@@ -107,7 +110,7 @@ function cleanRecord(table, field, sysid, origin) {
     }
 }
 
-function buildArray(table, field, type, tablename) {
+function buildArray(table, field, type, tablename, sourceTable) {
     var tempArray = [];
     var ga = new GlideAggregate(table);
     ga.addQuery(field, 'IN', array + '');
@@ -122,8 +125,27 @@ function buildArray(table, field, type, tablename) {
     log('_ ' + type + ' COUNTS ________________________');
     while (ga.next()) {
         var count = ga.getAggregate('COUNT', field);
-        if (count > maxUpdates) {
-            log(ga[tablename] + ' [' + ga[field] + ']: ' + count);
+        if (count > updatesFloor) {
+            if (displayValue) {
+                var grDisplay = new GlideRecord(sourceTable);
+                if (grDisplay.get(ga[field])) {
+                    if (linkAuditRecord) {
+                        var href = '<a href="/' + table + '_list.do?sysparm_query=' + field + '='
+                             + ga[field] + '" target="_blank">' + grDisplay.getDisplayValue() + '</a>';
+                        log(ga[tablename] + ' [' + href + ']: ' + count);
+                    } else {
+                        log(ga[tablename] + ' [' + grDisplay.getDisplayValue() + ']: ' + count);
+                    }
+                }
+            } else {
+                if (linkAuditRecord) {
+                    var href = '<a href="/' + table + '_list.do?sysparm_query=' + field + '='
+                         + ga[field] + '" target="_blank">' + ga[field] + '</a>';
+                    log(ga[tablename] + ' [' + href + ']: ' + count);
+                } else {
+                    log(ga[tablename] + ' [' + ga[field] + ']: ' + count);
+                }
+            }
             tempArray.push(ga[field] + '');
         }
     }
