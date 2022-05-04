@@ -1,9 +1,14 @@
 var runLog = '', //fix script gs.info is awful, aggregate it and show it all at once
+processAudit = true,
+processJournal = true,
+processRelation = false,
 iSGlobal = false, //###NEED TO IMPLEMENT###dont clean a specific table just search all audit records for high counts
 displayValue = true, //Log info shows display value of the table records count
-tablesToClean = ['task', 'sys_user'],
-linkAuditRecord = true,
-verbose = true,
+tablesToClean = ['sys_user'], //['task','sys_user']
+linkAuditRecord = false, //provides html link to view audit records (use in xplore to render)
+verbose = true, //log record counts
+deleteSystemOnly = true, //Only delete system created records on sys_user table. Fixes erronous flapping of ad ldap auth and ldap sys import tz conflicts bug
+deleteOnlyOverAYear = true,
 deleteRecords = false, //show preview of affected records when verbose is true and this is false
 keepLatest100 = false,
 displayChildTable = false, //a lot faster w/o, only need with root table ie task
@@ -45,17 +50,23 @@ for (var t = 0; t < tablesToClean.length; t++) {
 
     if (keepLatest100 || deleteRecords) {
         //Clean Audit Records
-        for (var i = 0; i < arrayAudit.length; i++) {
-            cleanRecord('sys_audit', 'documentkey', arrayAudit[i], 'Audit');
+        if (processAudit) {
+            for (var i = 0; i < arrayAudit.length; i++) {
+                cleanRecord('sys_audit', 'documentkey', arrayAudit[i], 'Audit');
+            }
         }
         //Clean Journal Records
-        for (var x = 0; x < arrayJournal.length; x++) {
-            cleanRecord('sys_journal_field', 'element_id', arrayJournal[x], 'Journal');
+        if (processJournal) {
+            for (var x = 0; x < arrayJournal.length; x++) {
+                cleanRecord('sys_journal_field', 'element_id', arrayJournal[x], 'Journal');
+            }
         }
 
         //Clean Relationship Records
-        for (var y = 0; y < arrayRelation.length; y++) {
-            cleanRecord('sys_audit_relation', 'documentkey', arrayRelation[y], 'Relation');
+        if (processRelation) {
+            for (var y = 0; y < arrayRelation.length; y++) {
+                cleanRecord('sys_audit_relation', 'documentkey', arrayRelation[y], 'Relation');
+            }
         }
     }
 }
@@ -79,6 +90,10 @@ function updateOrigin(type, sysid, count) {
 function cleanRecord(table, field, sysid, origin) {
     var grClean = new GlideRecord(table);
     grClean.addQuery(field, sysid);
+    if (deleteOnlyOverAYear)
+        grClean.addEncodedQuery('sys_created_onRELATIVELT@dayofweek@ago@365');
+    if (deleteSystemOnly && origin == 'sys_user')
+        grClean.addQuery('sys_created_by', 'system');
     grClean.orderBy('sys_created_on');
     if (keepLatest100)
         grClean.chooseWindow(100, 100000000);
@@ -88,13 +103,13 @@ function cleanRecord(table, field, sysid, origin) {
         var cleanIndex = 0;
         while (grClean.next()) {
             if (cleanIndex == 0)
-                log('first: ' + grClean.sys_created_on);
+                log('keep latest 100 first: ' + grClean.sys_created_on);
             cleanIndex++;
-            if (deleteRecords) {
+            if (deleteRecords) {			
                 grClean.deleteRecord();
             }
         }
-        log('cleanIndex: ' + cleanIndex + ' Last: ' + grClean.sys_created_on);
+        log('keep latest 100 cleanIndex: ' + cleanIndex + ' Last: ' + grClean.sys_created_on);
         updateOrigin(origin, sysid, count);
     }
     if (deleteRecords && !keepLatest100) {
